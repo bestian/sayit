@@ -1,6 +1,17 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
+import { useHead } from '@unhead/vue'
+
+useHead({
+  title: ' Home :: SayIt ',
+  meta: [
+    {
+      property: 'og:title',
+      content: 'SayIt',
+    },
+  ],
+})
 
 const ccText = ref('')
 
