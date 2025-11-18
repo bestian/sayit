@@ -4,6 +4,7 @@ import SpeechesView from '../views/SpeechesView.vue'
 import SpeakersView from '../views/SpeakersView.vue'
 import SingleSpeakerView from '../views/SingleSpeakerView.vue'
 import SingleSpeechView from '../views/SingleSpeechView.vue'
+import SingleParagraphView from '../views/SingleParagraphView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -17,6 +18,11 @@ const router = createRouter({
       path: '/speeches',
       name: 'speeches',
       component: SpeechesView,
+    },
+    {
+      path: '/speech/:paragraph_id',
+      name: 'single-paragraph',
+      component: SingleParagraphView,
     },
     {
       path: '/speakers',
