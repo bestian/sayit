@@ -30,7 +30,7 @@ const router = createRouter({
       component: SpeakersView,
     },
     {
-      path: '/speaker/:name',
+      path: '/speaker/:route_pathname',
       name: 'single-speaker',
       component: SingleSpeakerView,
     },
