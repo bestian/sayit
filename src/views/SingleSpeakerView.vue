@@ -144,7 +144,7 @@ onMounted(async () => {
                 <input type="hidden" name="p" :value="speaker.id">
                 <div class="search-wrapper">
                   <input type="search" class="site-search__input" placeholder="Search this person's speeches" name="q">
-                  <input type="submit" class="icon-search icon-search" value="搜尋">
+                  <input type="submit" class="icon-search icon-search" value="Search">
                 </div>
               </form>
             </div>

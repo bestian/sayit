@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useHead } from '@unhead/vue'
 
@@ -12,16 +11,6 @@ useHead({
     },
   ],
 })
-
-const ccText = ref('')
-
-onMounted(() => {
-  if (navigator.language.toLowerCase() === 'zh-tw') {
-    ccText.value = '本站由 唐鳳 維運，除另有標示外，內容以創用 CC0 授權條款釋出'
-  } else {
-    ccText.value = 'This site is maintained and operated by Audrey Tang. Unless otherwise indicated, the content is released under the terms of the Creative Commons CC0 license.'
-  }
-})
 </script>
 
 <template>
@@ -33,8 +22,8 @@ onMounted(() => {
             <h2>Search speeches and statements</h2>
             <form class="site-search site-search--homepage" action="/search/" method="get">
               <div class="search-wrapper">
-                <input type="search" class="site-search__input" placeholder="搜尋" name="q" />
-                <input type="submit" class="icon-search icon-search" value="搜尋" />
+                <input type="search" class="site-search__input" placeholder="Search" name="q" />
+                <input type="submit" class="icon-search icon-search" value="Search" />
               </div>
             </form>
           </div>
@@ -59,7 +48,8 @@ onMounted(() => {
       <div class="row">
         <div class="columns small-12 large-9" style="padding: 0">
           <p style="font-size: 1em; font-weight: bold; display: flex; margin-inline-end: auto;" id="cc">
-            {{ ccText }}
+            本站由 唐鳳 維運，除另有標示外，內容以創用 CC0 授權條款釋出<br>
+            This site is maintained and operated by Audrey Tang. Unless otherwise indicated, the content is released under the terms of the Creative Commons CC0 license.
           </p>
         </div>
         <div class="columns small-12 large-3" style="padding: 0">

@@ -11,7 +11,7 @@ import { RouterLink } from 'vue-router'
         </h1>
         <ul class="inline-list left">
           <li>
-            <RouterLink to="/">Home</RouterLink> <!-- 首頁 -->
+            <RouterLink to="/">Home</RouterLink>
           </li>
           <li>
             <RouterLink to="/speakers">Speakers</RouterLink>
