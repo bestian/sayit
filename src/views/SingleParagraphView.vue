@@ -1,60 +1,329 @@
 <script setup lang="ts">
-import { useRoute } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useHead } from '@unhead/vue'
+import axios from 'axios'
 
 const route = useRoute()
-const paragraphId = route.params.paragraph_id
+const router = useRouter()
+const paragraphId = computed(() => route.params.paragraph_id as string)
+
+// 定義 TypeScript 介面
+interface Section {
+  filename: string
+  section_id: number
+  section_speaker: string | null
+  section_content: string
+  previous_section_id: number | null
+  next_section_id: number | null
+}
+
+interface Speaker {
+  id: number
+  route_pathname: string
+  name: string
+  photoURL: string
+  appearances_count: number
+  speeches_count: number
+  speeches: Array<{
+    summary: string
+    speech_name: string
+    section_id: number
+  }>
+  longest_speech: {
+    summary: string
+    speech_name: string
+    section_id: number
+  }
+}
+
+const section = ref<Section | null>(null)
+const speaker = ref<Speaker | null>(null)
+const parsedContent = ref<string>('')
+const previousTextPreview = ref<string>('')
+const nextTextPreview = ref<string>('')
+
+// 獲取段落內容預覽（前30個字符，去除HTML標籤）
+const sectionContentPreview = computed(() => {
+  if (!parsedContent.value) {
+    return ''
+  }
+  const plainText = stripHtmlTags(parsedContent.value).trim()
+  return plainText.substring(0, 30)
+})
+
+// 獲取段落內容的純文字（完整內容，去除HTML標籤）
+const sectionContentPlainText = computed(() => {
+  if (!parsedContent.value) {
+    return ''
+  }
+  return stripHtmlTags(parsedContent.value).trim()
+})
+
+// 動態標題
+const title = computed(() => {
+  if (sectionContentPreview.value) {
+    return `"${sectionContentPreview.value}..." :: SayIt`
+  }
+  return 'View Paragraph :: SayIt'
+})
+
+const ogTitle = computed(() => {
+  if (sectionContentPreview.value) {
+    return `"${sectionContentPreview.value}..." :: SayIt`
+  }
+  return 'View Paragraph :: SayIt'
+})
+
+const ogDescription = computed(() => {
+  return sectionContentPlainText.value
+})
 
 useHead({
-  title: ' View Paragraph :: SayIt ',
+  title: title,
   meta: [
     {
       property: 'og:title',
-      content: 'SayIt',
+      content: ogTitle,
+    },
+    {
+      property: 'og:description',
+      content: ogDescription,
     },
   ],
 })
+
+// 處理 JSON 跳脫字符
+const parseContent = (content: string): string => {
+  try {
+    // 如果內容是 JSON 跳脫的字符串，先解析
+    const parsed = JSON.parse(content)
+    return typeof parsed === 'string' ? parsed : content
+  } catch {
+    // 如果不是有效的 JSON，直接返回原內容
+    return content
+  }
+}
+
+// 移除 HTML 標籤並提取純文字
+const stripHtmlTags = (html: string): string => {
+  // 創建一個臨時的 DOM 元素來解析 HTML
+  const tmp = document.createElement('div')
+  tmp.innerHTML = html
+  return tmp.textContent || tmp.innerText || ''
+}
+
+// 獲取段落文字預覽（前 30 個字符）
+const getTextPreview = async (sectionId: number): Promise<string> => {
+  try {
+    const response = await axios.get<Section>(
+      `https://sayit-backend.audreyt.workers.dev/api/section/${sectionId}`
+    )
+    const sectionData = response.data
+
+    if (!sectionData.section_content) {
+      return ''
+    }
+
+    // 處理 JSON 跳脫字符
+    const parsed = parseContent(sectionData.section_content)
+
+    // 移除 HTML 標籤
+    const plainText = stripHtmlTags(parsed).trim()
+
+    // 返回前 30 個字符
+    return plainText.substring(0, 30)
+  } catch (error) {
+    console.error(`Failed to fetch section ${sectionId} data:`, error)
+    return ''
+  }
+}
+
+// 獲取講者信息
+const fetchSpeakerInfo = async (route_pathname: string) => {
+  try {
+    const response = await axios.get<Speaker>(
+      `https://sayit-backend.audreyt.workers.dev/api/speaker_detail/${route_pathname}.json`
+    )
+    speaker.value = response.data
+  } catch (error) {
+    console.error('Failed to fetch speaker data:', error)
+  }
+}
+
+// 抓取段落資料的主要函式
+const fetchSectionData = async (sectionId: string) => {
+  try {
+    // 重置狀態
+    section.value = null
+    speaker.value = null
+    parsedContent.value = ''
+    previousTextPreview.value = ''
+    nextTextPreview.value = ''
+
+    // 調用段落 API
+    const response = await axios.get<Section>(
+      `https://sayit-backend.audreyt.workers.dev/api/section/${sectionId}`
+    )
+    section.value = response.data
+
+    // 處理 section_content 的 JSON 跳脫字符
+    if (section.value.section_content) {
+      parsedContent.value = parseContent(section.value.section_content)
+    }
+
+    // 如果 section_speaker 存在，獲取講者信息
+    if (section.value.section_speaker) {
+      await fetchSpeakerInfo(section.value.section_speaker)
+    }
+
+    // 獲取上一段和下一段的文字預覽
+    if (section.value.previous_section_id) {
+      const preview = await getTextPreview(section.value.previous_section_id)
+      previousTextPreview.value = preview
+    }
+
+    if (section.value.next_section_id) {
+      const preview = await getTextPreview(section.value.next_section_id)
+      nextTextPreview.value = preview
+    }
+  } catch (error) {
+    console.error('Failed to fetch section data:', error)
+  }
+}
+
+// 監聽路由參數變化
+watch(paragraphId, (newId) => {
+  if (newId) {
+    fetchSectionData(newId)
+  }
+}, { immediate: false })
+
+// 鍵盤快捷鍵處理
+const handleKeydown = (event: KeyboardEvent) => {
+  // 如果用戶正在輸入（例如在 input 或 textarea 中），則不觸發快捷鍵
+  const target = event.target as HTMLElement
+  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+    return
+  }
+
+  if (event.key === 'j' && section.value?.previous_section_id) {
+    event.preventDefault()
+    router.push(getParagraphUrl(section.value.previous_section_id))
+  } else if (event.key === 'k' && section.value?.next_section_id) {
+    event.preventDefault()
+    router.push(getParagraphUrl(section.value.next_section_id))
+  }
+}
+
+// API 調用邏輯
+onMounted(async () => {
+  if (paragraphId.value) {
+    await fetchSectionData(paragraphId.value)
+  }
+  // 添加鍵盤事件監聽器
+  window.addEventListener('keydown', handleKeydown)
+})
+
+// 清理鍵盤事件監聽器
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown)
+})
+
+// 生成講者連結
+const getSpeakerUrl = (route_pathname: string) => {
+  return `/speaker/${route_pathname}`
+}
+
+// 生成演講連結（用於麵包屑）
+const getSpeechUrl = (filename: string) => {
+  return `/${encodeURIComponent(filename)}`
+}
+
+// 生成 Show context 連結
+const getContextUrl = (filename: string, sectionId: number) => {
+  return {
+    path: `/${encodeURIComponent(filename)}`,
+    hash: `#s${sectionId}`
+  }
+}
+
+// 生成上一段/下一段連結
+const getParagraphUrl = (sectionId: number) => {
+  return `/speech/${sectionId}`
+}
 </script>
 
 <template>
-  <div class="full-page">
+  <div class="full-page" v-if="section">
     <div class="full-page__row">
       <div class="full-page__unit">
         <div class="single-speech-layout">
           <div class="single-speech-layout__speech-column">
             <div class="speech speech-single-speech">
-              <a class="speech-single-speech__speaker-portrait" href="/speaker/%E5%94%90%E9%B3%B3-3">
+              <!-- 講者頭像 -->
+              <router-link
+                v-if="speaker"
+                class="speech-single-speech__speaker-portrait"
+                :to="getSpeakerUrl(speaker.route_pathname)">
                 <img
-                  src="https://sayit.archive.tw/media/speakers/default/pic_AudreyTang-small.jpg.96x96_q85_crop-smart_face_upscale.jpg"
-                  style="border-color: #4d89d2; background-color: #4d89d2;" alt=""
+                  :src="speaker.photoURL"
+                  :style="`border-color: #4d89d2; background-color: #4d89d2;`"
+                  :alt="speaker.name"
                   class="speaker-portrait speaker-portrait--left round-image speaker-portrait--large">
-              </a>
+              </router-link>
+              <!-- 講者信息 -->
               <div class="speech__meta-data">
-                <span class="speech__meta-data__speech-type">Speech</span> by <span
-                  class="speech__meta-data__speaker-name"> <a href="/speaker/%E5%94%90%E9%B3%B3-3">唐鳳</a> </span>
+                <span class="speech__meta-data__speech-type">Speech</span>
+                <span v-if="speaker"> by <span class="speech__meta-data__speaker-name">
+                    <router-link :to="getSpeakerUrl(speaker.route_pathname)">{{ speaker.name }}</router-link>
+                  </span>
+                </span>
               </div>
-              <div class="speech__content speech__content-single-speech">
-                <p>柏林晚安。非常榮幸能來到這裡——這座城市向世人證明，當人們攜手並肩時，即使高牆也能倒塌。</p>
+              <!-- 段落內容 -->
+              <div class="speech__content speech__content-single-speech" v-html="parsedContent">
               </div>
-              <ul class="breadcrumbs">
-                <li><a
-                    href="/2025-11-10-%E6%9F%8F%E6%9E%97%E8%87%AA%E7%94%B1%E6%9C%83%E8%AD%B0ai-%E7%9A%84%E8%A7%92%E8%89%B2">2025-11-10
-                    柏林自由會議：AI 的角色</a>
+              <!-- 麵包屑導航 -->
+              <ul class="breadcrumbs" v-if="section.filename">
+                <li>
+                  <router-link :to="getSpeechUrl(section.filename)">
+                    {{ section.filename }}
+                  </router-link>
                 </li>
               </ul>
-              <div class="speech__links">
-                <a
-                  href="/2025-11-10-%E6%9F%8F%E6%9E%97%E8%87%AA%E7%94%B1%E6%9C%83%E8%AD%B0ai-%E7%9A%84%E8%A7%92%E8%89%B2#s628198"><i
-                    class="speech-icon icon-link-in-context"></i>Show context</a>
+              <!-- Show context 連結 -->
+              <div class="speech__links" v-if="section.filename && section.section_id">
+                <router-link :to="getContextUrl(section.filename, section.section_id)">
+                  <i class="speech-icon icon-link-in-context"></i>Show context
+                </router-link>
               </div>
             </div>
             <!-- ./speech -->
+            <!-- 上一段/下一段導航 -->
             <div class="speech-navigation">
               <div class="speech-navigation__column speech-navigation__column--one">
-                <a href="/speech/628197" class="button speech-navigation__button">←
-                  （...</a>
-                <a href="/speech/628199" class="button speech-navigation__button">我認為柏林是討論 AI 角色的完美地點，因為這裡 1989 ...
-                  →</a>
+                <router-link
+                  v-if="section.previous_section_id"
+                  :to="getParagraphUrl(section.previous_section_id)"
+                  class="button speech-navigation__button">
+                  <template v-if="previousTextPreview">
+                    ← {{ previousTextPreview }}...
+                  </template>
+                  <template v-else>
+                    ← （...
+                  </template>
+                </router-link>
+                <router-link
+                  v-if="section.next_section_id"
+                  :to="getParagraphUrl(section.next_section_id)"
+                  class="button speech-navigation__button">
+                  <template v-if="nextTextPreview">
+                    {{ nextTextPreview }}... →
+                  </template>
+                  <template v-else>
+                    （... →
+                  </template>
+                </router-link>
               </div>
               <div class="speech-navigation__column speech-navigation__column--two">
                 <div class="ui-instructions">
