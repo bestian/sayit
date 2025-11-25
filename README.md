@@ -43,6 +43,12 @@ npm run build
 
 ### Preview Production Version
 
+step 1.
+```sh
+npm run build
+```
+
+step 2.
 ```sh
 npm run preview
 ```
