@@ -16,29 +16,14 @@ interface Section {
   section_content: string
   previous_section_id: number | null
   next_section_id: number | null
-}
-
-interface Speaker {
-  id: number
-  route_pathname: string
-  name: string
-  photoURL: string
-  appearances_count: number
-  speeches_count: number
-  speeches: Array<{
-    summary: string
-    speech_name: string
-    section_id: number
-  }>
-  longest_speech: {
-    summary: string
-    speech_name: string
-    section_id: number
-  }
+  display_name: string
+  photoURL: string | null
+  name: string | null
+  previous_content: string | null
+  next_content: string | null
 }
 
 const section = ref<Section | null>(null)
-const speaker = ref<Speaker | null>(null)
 const parsedContent = ref<string>('')
 const previousTextPreview = ref<string>('')
 const nextTextPreview = ref<string>('')
@@ -113,50 +98,11 @@ const stripHtmlTags = (html: string): string => {
   return tmp.textContent || tmp.innerText || ''
 }
 
-// 獲取段落文字預覽（前 30 個字符）
-const getTextPreview = async (sectionId: number): Promise<string> => {
-  try {
-    const response = await axios.get<Section>(
-      `https://sayit-backend.audreyt.workers.dev/api/section/${sectionId}`
-    )
-    const sectionData = response.data
-
-    if (!sectionData.section_content) {
-      return ''
-    }
-
-    // 處理 JSON 跳脫字符
-    const parsed = parseContent(sectionData.section_content)
-
-    // 移除 HTML 標籤
-    const plainText = stripHtmlTags(parsed).trim()
-
-    // 返回前 30 個字符
-    return plainText.substring(0, 30)
-  } catch (error) {
-    console.error(`Failed to fetch section ${sectionId} data:`, error)
-    return ''
-  }
-}
-
-// 獲取講者信息
-const fetchSpeakerInfo = async (route_pathname: string) => {
-  try {
-    const response = await axios.get<Speaker>(
-      `https://sayit-backend.audreyt.workers.dev/api/speaker_detail/${route_pathname}.json`
-    )
-    speaker.value = response.data
-  } catch (error) {
-    console.error('Failed to fetch speaker data:', error)
-  }
-}
-
 // 抓取段落資料的主要函式
 const fetchSectionData = async (sectionId: string) => {
   try {
     // 重置狀態
     section.value = null
-    speaker.value = null
     parsedContent.value = ''
     previousTextPreview.value = ''
     nextTextPreview.value = ''
@@ -172,20 +118,18 @@ const fetchSectionData = async (sectionId: string) => {
       parsedContent.value = parseContent(section.value.section_content)
     }
 
-    // 如果 section_speaker 存在，獲取講者信息
-    if (section.value.section_speaker) {
-      await fetchSpeakerInfo(section.value.section_speaker)
+    // 處理上一段的文字預覽（前 30 個字符）
+    if (section.value.previous_content) {
+      const parsed = parseContent(section.value.previous_content)
+      const plainText = stripHtmlTags(parsed).trim()
+      previousTextPreview.value = plainText.substring(0, 30)
     }
 
-    // 獲取上一段和下一段的文字預覽
-    if (section.value.previous_section_id) {
-      const preview = await getTextPreview(section.value.previous_section_id)
-      previousTextPreview.value = preview
-    }
-
-    if (section.value.next_section_id) {
-      const preview = await getTextPreview(section.value.next_section_id)
-      nextTextPreview.value = preview
+    // 處理下一段的文字預覽（前 30 個字符）
+    if (section.value.next_content) {
+      const parsed = parseContent(section.value.next_content)
+      const plainText = stripHtmlTags(parsed).trim()
+      nextTextPreview.value = plainText.substring(0, 30)
     }
   } catch (error) {
     console.error('Failed to fetch section data:', error)
@@ -230,7 +174,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
 })
 
-// 生成講者連結
+// 生成講者連結（section_speaker 已經是 URIComponent 編碼）
 const getSpeakerUrl = (route_pathname: string) => {
   return `/speaker/${route_pathname}`
 }
@@ -262,21 +206,17 @@ const getParagraphUrl = (sectionId: number) => {
           <div class="single-speech-layout__speech-column">
             <div class="speech speech-single-speech">
               <!-- 講者頭像 -->
-              <router-link
-                v-if="speaker"
-                class="speech-single-speech__speaker-portrait"
-                :to="getSpeakerUrl(speaker.route_pathname)">
-                <img
-                  :src="speaker.photoURL"
-                  :style="`border-color: #4d89d2; background-color: #4d89d2;`"
-                  :alt="speaker.name"
+              <router-link v-if="section.section_speaker && section.photoURL"
+                class="speech-single-speech__speaker-portrait" :to="getSpeakerUrl(section.section_speaker)">
+                <img :src="section.photoURL" :style="`border-color: #4d89d2; background-color: #4d89d2;`"
+                  :alt="section.name || ''"
                   class="speaker-portrait speaker-portrait--left round-image speaker-portrait--large">
               </router-link>
               <!-- 講者信息 -->
               <div class="speech__meta-data">
                 <span class="speech__meta-data__speech-type">Speech</span>
-                <span v-if="speaker"> by <span class="speech__meta-data__speaker-name">
-                    <router-link :to="getSpeakerUrl(speaker.route_pathname)">{{ speaker.name }}</router-link>
+                <span v-if="section.section_speaker && section.name"> by <span class="speech__meta-data__speaker-name">
+                    <router-link :to="getSpeakerUrl(section.section_speaker)">{{ section.name }}</router-link>
                   </span>
                 </span>
               </div>
@@ -287,7 +227,7 @@ const getParagraphUrl = (sectionId: number) => {
               <ul class="breadcrumbs" v-if="section.filename">
                 <li>
                   <router-link :to="getSpeechUrl(section.filename)">
-                    {{ section.filename }}
+                    {{ section.display_name }}
                   </router-link>
                 </li>
               </ul>
@@ -302,9 +242,7 @@ const getParagraphUrl = (sectionId: number) => {
             <!-- 上一段/下一段導航 -->
             <div class="speech-navigation">
               <div class="speech-navigation__column speech-navigation__column--one">
-                <router-link
-                  v-if="section.previous_section_id"
-                  :to="getParagraphUrl(section.previous_section_id)"
+                <router-link v-if="section.previous_section_id" :to="getParagraphUrl(section.previous_section_id)"
                   class="button speech-navigation__button">
                   <template v-if="previousTextPreview">
                     ← {{ previousTextPreview }}...
@@ -313,9 +251,7 @@ const getParagraphUrl = (sectionId: number) => {
                     ← （...
                   </template>
                 </router-link>
-                <router-link
-                  v-if="section.next_section_id"
-                  :to="getParagraphUrl(section.next_section_id)"
+                <router-link v-if="section.next_section_id" :to="getParagraphUrl(section.next_section_id)"
                   class="button speech-navigation__button">
                   <template v-if="nextTextPreview">
                     {{ nextTextPreview }}... →
