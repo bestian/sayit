@@ -21,7 +21,87 @@ interface Section {
 }
 
 const sections = ref<Section[]>([])
+const sortedSections = ref<Section[]>([])
+const isMonotonic = ref(true)
 const loading = ref(true)
+
+// 檢查 section_id 是否單調上升
+const checkMonotonic = (sections: Section[]): boolean => {
+  if (sections.length <= 1) {
+    return true
+  }
+  for (let i = 1; i < sections.length; i++) {
+    const current = sections[i]
+    const previous = sections[i - 1]
+    if (current && previous && current.section_id <= previous.section_id) {
+      return false
+    }
+  }
+  return true
+}
+
+// 重新排列段落順序
+const reorderSections = (sections: Section[]): Section[] => {
+  if (sections.length === 0) {
+    return []
+  }
+
+  // 創建新的陣列，不修改原始陣列
+  const newArray: Section[] = []
+  const remaining = [...sections] // 複製原始陣列
+
+  // 1. 找到最小 section_id 的物件當最前面
+  if (remaining.length === 0 || !remaining[0]) {
+    return []
+  }
+
+  let minIndex = 0
+  let minSectionId = remaining[0].section_id
+  for (let i = 1; i < remaining.length; i++) {
+    const current = remaining[i]
+    if (current && current.section_id < minSectionId) {
+      minSectionId = current.section_id
+      minIndex = i
+    }
+  }
+
+  // 將最小 section_id 的物件加入新陣列
+  const firstSection = remaining[minIndex]
+  if (firstSection) {
+    newArray.push(firstSection)
+    remaining.splice(minIndex, 1)
+  }
+
+  // 2. 用 for 迴圈數陣列長度那麼多次，每次把 previous_section_id 和陣列中最後一位的 section_id 相同的接上去
+  const arrayLength = sections.length
+  for (let i = 0; i < arrayLength - 1; i++) {
+    const lastItem = newArray[newArray.length - 1]
+    if (!lastItem) {
+      break
+    }
+
+    const lastSectionId = lastItem.section_id
+    let found = false
+
+    // 尋找 previous_section_id 等於最後一位 section_id 的物件
+    for (let j = 0; j < remaining.length; j++) {
+      const current = remaining[j]
+      if (current && current.previous_section_id === lastSectionId) {
+        newArray.push(current)
+        remaining.splice(j, 1)
+        found = true
+        break
+      }
+    }
+
+    // 如果找不到，可能已經到結尾或資料有問題
+    if (!found) {
+      break
+    }
+  }
+
+  return newArray
+}
 
 // 獲取演講資料
 const fetchSpeechData = async () => {
@@ -30,7 +110,21 @@ const fetchSpeechData = async () => {
     const response = await axios.get<Section[]>(
       `https://sayit-backend.audreyt.workers.dev/api/speech/${encodeURIComponent(speechName)}`
     )
-    sections.value = response.data
+    const rawData = response.data
+
+    // 檢查是否單調上升
+    const isMonotonicValue = checkMonotonic(rawData)
+    isMonotonic.value = isMonotonicValue
+
+    if (isMonotonicValue) {
+      // 如果單調上升，直接使用原始資料
+      sections.value = rawData
+      sortedSections.value = []
+    } else {
+      // 如果不是單調上升，重新排列
+      sections.value = rawData
+      sortedSections.value = reorderSections(rawData)
+    }
   } catch (error) {
     console.error('Failed to fetch speech data:', error)
   } finally {
@@ -38,10 +132,15 @@ const fetchSpeechData = async () => {
   }
 }
 
+// 根據 isMonotonic 決定使用哪個陣列
+const displaySections = computed(() => {
+  return isMonotonic.value ? sections.value : sortedSections.value
+})
+
 // 將 URL slug 轉換為可讀的標題（將連字號替換為空格，並處理特殊字符）
 const formattedSpeechName = computed(() => {
-  if (sections.value.length > 0 && sections.value[0]) {
-    return sections.value[0].display_name
+  if (displaySections.value.length > 0 && displaySections.value[0]) {
+    return displaySections.value[0].display_name
   }
   return speechName
     .replace(/-/g, ' ')
@@ -97,13 +196,14 @@ onMounted(() => {
         <div class="page-header page-header--speech">
           <ul class="breadcrumbs">
           </ul>
-          <h1 v-if="!loading && sections.length > 0 && sections[0]">{{ sections[0].display_name }}</h1>
+          <h1 v-if="!loading && displaySections.length > 0 && displaySections[0]">{{ displaySections[0].display_name }}
+          </h1>
           <h1 v-else>{{ formattedSpeechName }}</h1>
         </div>
         <div class="page-content__row" v-if="!loading">
           <div class="primary-content__unit">
             <ul class="section-list">
-              <li v-for="section in sections" :key="section.section_id" :id="`s${section.section_id}`" :class="[
+              <li v-for="section in displaySections" :key="section.section_id" :id="`s${section.section_id}`" :class="[
                 'speech',
                 'speech--',
                 'speech--border',
