@@ -3,6 +3,12 @@ import { ref, onMounted } from 'vue'
 import { useHead } from '@unhead/vue'
 import axios from 'axios'
 
+// 定義 TypeScript 介面
+interface SpeechItem {
+  filename: string
+  display_name: string
+}
+
 useHead({
   title: ' Speeches :: Sayit ',
   meta: [
@@ -13,17 +19,11 @@ useHead({
   ],
 })
 
-const speech_index = ref<string[]>([])
-
-// 格式化文字：將最後一個數字後面的 "-" 替換成 " "
-const formatSpeechName = (name: string): string => {
-  // 匹配最後一個數字序列後的 "-"，確保後面沒有更多數字序列
-  return name.replace(/(\d+)-(?!.*\d)/, '$1 ')
-}
+const speech_index = ref<SpeechItem[]>([])
 
 onMounted(async () => {
   try {
-    const response = await axios.get<string[]>(
+    const response = await axios.get<SpeechItem[]>(
       'https://sayit-backend.audreyt.workers.dev/api/speech_index.json'
     )
     speech_index.value = response.data
@@ -31,6 +31,11 @@ onMounted(async () => {
     console.error('Failed to fetch speech index:', error)
   }
 })
+
+// 生成演講連結
+const getSpeechUrl = (filename: string) => {
+  return `/${encodeURIComponent(filename)}`
+}
 </script>
 
 <template>
@@ -41,10 +46,10 @@ onMounted(async () => {
           <h1>Speeches</h1>
         </div>
         <ul class="unstyled">
-          <li v-for="speech_name in speech_index" :key="speech_name">
+          <li v-for="speech in speech_index" :key="speech.filename">
             <span class="section-title">
-              <router-link :to="'/' + speech_name">
-                {{ formatSpeechName(speech_name) }}
+              <router-link :to="getSpeechUrl(speech.filename)">
+                {{ speech.display_name }}
               </router-link>
             </span>
           </li>
