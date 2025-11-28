@@ -7,10 +7,40 @@ import axios from 'axios'
 const route = useRoute()
 const route_pathname = route.params.route_pathname as string
 
-interface Speech {
-  summary: string
-  speech_name: string
+interface ApiSection {
+  filename: string
+  display_name: string
   section_id: number
+  previous_section_id: number | null
+  next_section_id: number | null
+  section_speaker: string | null
+  section_content: string
+}
+
+interface Section extends ApiSection {
+  summary: string
+}
+
+interface ApiLongestSection {
+  section_id: number
+  section_content: string
+  section_filename: string
+  section_display_name: string
+}
+
+interface LongestSection extends ApiLongestSection {
+  summary: string
+}
+
+interface SpeakerApiResponse {
+  id: number
+  route_pathname: string
+  name: string
+  photoURL: string
+  appearances_count: number
+  sections_count: number
+  sections: ApiSection[]
+  longest_section: ApiLongestSection | null
 }
 
 interface Speaker {
@@ -19,9 +49,9 @@ interface Speaker {
   name: string
   photoURL: string
   appearances_count: number
-  speeches_count: number
-  speeches: Speech[]
-  longest_speech: Speech
+  sections_count: number
+  sections: Section[]
+  longest_section: LongestSection | null
 }
 
 const speaker = ref<Speaker | null>(null)
@@ -48,9 +78,9 @@ useHead({
 })
 
 // 生成演講連結（包含 hash，用於 router-link）
-const getSpeechUrl = (speechName: string, sectionId: number) => {
+const getSpeechUrl = (filename: string, sectionId: number) => {
   return {
-    path: `/${encodeURIComponent(speechName)}`,
+    path: `/${encodeURIComponent(filename)}`,
     hash: `#s${sectionId}`
   }
 }
@@ -61,16 +91,47 @@ const getSpeechPageUrl = (sectionId: number) => {
 }
 
 // 生成演講名稱連結（不含 hash）
-const getSpeechNameUrl = (speechName: string) => {
-  return `/${encodeURIComponent(speechName)}`
+const getSpeechNameUrl = (filename: string) => {
+  return `/${encodeURIComponent(filename)}`
+}
+
+const stripHtmlTags = (html: string) => {
+  if (!html) {
+    return ''
+  }
+  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+// 格式化 longest_section 的摘要：截取前30個字符，加上前後引號和省略號
+const formatLongestSectionSummary = (summary: string) => {
+  if (!summary) {
+    return ''
+  }
+  const truncated = summary.length > 30 ? summary.substring(0, 30) + '...' : summary
+  return `“${truncated}”`
 }
 
 onMounted(async () => {
   try {
-    const response = await axios.get<Speaker>(
+    const response = await axios.get<SpeakerApiResponse>(
       `https://sayit-backend.audreyt.workers.dev/api/speaker_detail/${encodeURIComponent(route_pathname)}.json`
     )
-    speaker.value = response.data
+    const normalizedSections: Section[] = response.data.sections.map((section) => ({
+      ...section,
+      summary: stripHtmlTags(section.section_content),
+    }))
+    const normalizedLongestSection: LongestSection | null = response.data.longest_section
+      ? {
+          ...response.data.longest_section,
+          summary: stripHtmlTags(response.data.longest_section.section_content),
+        }
+      : null
+
+    speaker.value = {
+      ...response.data,
+      sections: normalizedSections,
+      longest_section: normalizedLongestSection,
+    }
   } catch (error) {
     console.error('Failed to fetch speaker data:', error)
   }
@@ -101,7 +162,7 @@ onMounted(async () => {
                 </div>
                 <div class="stat">
                   <div class="stat__figure">
-                    {{ speaker.speeches_count }}
+                    {{ speaker.sections_count }}
                   </div>
                   <div class="stat__descriptor">
                     Speeches
@@ -117,11 +178,11 @@ onMounted(async () => {
 									</div>
 								</div>
 								-->
-                <div class="stat" v-if="speaker.longest_speech">
+                <div class="stat" v-if="speaker.longest_section">
                   <div class="stat__figure">
                     <router-link
-                      :to="getSpeechUrl(speaker.longest_speech.speech_name, speaker.longest_speech.section_id)">
-                      "{{ speaker.longest_speech.summary }}"
+                      :to="getSpeechUrl(speaker.longest_section.section_filename, speaker.longest_section.section_id)">
+                      {{ formatLongestSectionSummary(speaker.longest_section.summary) }}
                     </router-link>
                   </div>
                   <div class="stat__descriptor">
@@ -150,16 +211,16 @@ onMounted(async () => {
             </div>
           </div>
           <ul class="unstyled js-masonry"
-            data-masonry-options="{&quot;columnWidth&quot;:&quot;.speech&quot;,&quot;itemSelector&quot;:&quot;.speech&quot;,&quot;gutter&quot;:&quot;.gutter-sizer&quot;}">
+            data-masonry-options='{"columnWidth":".speech","itemSelector":".speech","gutter":".gutter-sizer"}'>
             <li class="gutter-sizer"></li>
-            <li v-for="speech in speaker.speeches" :key="speech.section_id" :id="`s${speech.section_id}`"
+            <li v-for="section in speaker.sections" :key="section.section_id" :id="`s${section.section_id}`"
               class="speech speech--speech speech--border" style="border-left-color: rgb(77, 137, 210);">
               <div class="speech-wrapper">
                 <div class="speech__breadcrumb">
                   <ul class="breadcrumbs">
                     <li>
-                      <router-link :to="getSpeechNameUrl(speech.speech_name)">
-                        {{ speech.speech_name.replace(/-/g, ' ') }}
+                      <router-link :to="getSpeechNameUrl(section.filename)">
+                        {{ section.display_name }}
                       </router-link>
                     </li>
                     <li class="no-content-after">
@@ -170,17 +231,17 @@ onMounted(async () => {
                 </div>
                 <div class="speech__meta-data">
                 </div>
-                <router-link :title="`Link in context`" :to="getSpeechUrl(speech.speech_name, speech.section_id)"
+                <router-link :title="`Link in context`" :to="getSpeechUrl(section.filename, section.section_id)"
                   class="speech__content-link">
                   <div class="speech__content">
-                    <p>{{ speech.summary }}</p>
+                    <p>{{ section.summary }}</p>
                   </div>
                 </router-link>
                 <div class="speech__links">
-                  <router-link :title="`Link in context`" :to="getSpeechUrl(speech.speech_name, speech.section_id)">
+                  <router-link :title="`Link in context`" :to="getSpeechUrl(section.filename, section.section_id)">
                     <i class="speech-icon icon-link-in-context"></i>Link in context
                   </router-link>
-                  <router-link :title="`Link`" :to="getSpeechPageUrl(speech.section_id)">
+                  <router-link :title="`Link`" :to="getSpeechPageUrl(section.section_id)">
                     <i class="speech-icon icon-link"></i>Link
                   </router-link>
                 </div>
